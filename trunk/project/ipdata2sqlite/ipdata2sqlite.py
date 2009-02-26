@@ -170,20 +170,40 @@ def gen_min_db():
 	
 	# group the old areas data
 	_out_log('Groupping the old address infos.')
-	cur.execute('''SELECT min(start) as start,max(end) as end,province,city,area_id,area_type,parent_id 
-	FROM address
-	GROUP BY province,city,area_id,area_type,parent_id
-	''')
 	
-	# insert new data to table [address_min]
+	# get address all data and order by start min
+	cur.execute('''select id,start,end,province,city,location,area_id,area_type,parent_id,ip_start,ip_end from address order by start asc''')
+	
+	# cur1 for insert to address_min
 	cur1 = conn.cursor()
-	for row in cur:
-		ip_start,ip_end = _int2ip(int(row[0])),_int2ip(int(row[1]))
-		_out_log('Insert <%s|%s>' % (row[2],row[3]))
-		cur1.execute('''INSERT INTO "main"."address_min" 
-			("start","end","province","city","area_id","area_type","parent_id","ip_start","ip_end") 
-			VALUES (%s,%s,"%s","%s",%s,%s,%s,"%s","%s")
-			''' % (row[0],row[1],row[2],row[3],row[4],row[5],row[6],ip_start,ip_end))
+		
+	start_min = -1
+	end_max = -1
+	last_area_id = -1
+	last_row = None
+	for row in cur:		
+		c_start,c_end,c_area_id = int(row[1]),int(row[2]),int(row[6])
+		if last_area_id != c_area_id:			
+			if last_row != None: 
+				ip_start,ip_end = _int2ip(start_min),_int2ip(end_max)
+				cur1.execute('''INSERT INTO "main"."address_min" 
+					("start","end","province","city","area_id","area_type","parent_id","ip_start","ip_end") 
+					VALUES (%s,%s,"%s","%s",%s,%s,%s,"%s","%s")
+					''' % (start_min,end_max,last_row[3],last_row[4],last_row[6],last_row[7],last_row[8],ip_start,ip_end))
+				_out_log('Appended <%s> start:%s end:%s' % (last_row[3],start_min,end_max))
+			start_min = -1
+			end_max = -1
+			
+			
+		last_area_id = c_area_id		
+		last_row = row
+				
+		if c_start < start_min or start_min == -1:
+			start_min = c_start
+
+		if c_end > end_max or end_max == -1:
+			end_max = c_end		
+	
 			
 	# save db
 	conn.commit()
@@ -237,13 +257,28 @@ def gen_area():
 	cur.close()	
 	
 	_out_log('Gernate area done.')	
+	
+def find_ip():
+	ip = raw_input('Type the IP address:')
+	int_ip = _ip2int(ip)
+	conn = sqlite3.connect(SQLITE_DB_PATH)
+	cur = conn.cursor()
+	
+	cur.execute('''select * from "main"."address_min" where start < %s and end > %s''' % (int_ip,int_ip))
 
+	for row in cur:
+		_out_log('%s|%s|%s|%s' % (ip,int_ip,row[3],row[4]))
+	
+	s = raw_input('Do you want exit?(y/n):')
+	if str.lower(s) != 'y':
+		find_ip()
 def main():		
 	_out_log('''
 Menu:
 	1.Convert Ipdata.txt to db	
 	2.Group Areas  	
 	3.Convert Areas.txt to db	
+	4.Find IP Address
 	''')
 	m = raw_input('Type the menu id:')
 	if(m == "1"):
@@ -252,6 +287,8 @@ Menu:
 		gen_min_db()		
 	elif m == '3':
 		gen_area()
+	elif m == '4':
+		find_ip()
 	else:
 		exit()
 	
